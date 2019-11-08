@@ -1,0 +1,805 @@
+from serial import Serial
+import time
+import sys
+import random
+import smbus
+
+
+import RPi.GPIO as GPIO
+
+
+class ldr():
+    def __init__( self, pinI, pinO  ):
+        self.count = 0
+        self.RESET_PIN = pinO
+        self.TEST_PIN = pinI
+
+        GPIO.setwarnings(False) 	
+        GPIO.setmode(GPIO.BCM) 		
+
+        GPIO.setup(self.RESET_PIN, GPIO.OUT) 
+        GPIO.output(self.RESET_PIN, False) 	
+
+        GPIO.setup(self.TEST_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    def update( self ):
+        self.count = 0
+        GPIO.output(self.RESET_PIN, True) 	
+        time.sleep(0.001)
+        GPIO.output(self.RESET_PIN, False) 
+
+        while GPIO.input(self.TEST_PIN) == 0:
+            self.count +=1	
+
+        return self.count 
+
+    def getCount( self ):
+        return self.count
+
+
+#Controls game variables.
+class GameControl:
+        p1Score = 0
+        p2Score = 0
+        p1Supersize = 2
+        p2Supersize = 2
+        p1IsSupersize = False
+        p2IsSupersize = False
+        p1Location = 9
+        p2Location = 9
+        p1Scores = False
+	p2Scores = False
+	nextToServe = "p1"
+	isServe = True
+	serve_number = 0
+	speeds=[0.02,0.03,0.03,0.03,0.07]
+	change = False
+	
+#Object with terminal row/col coordinates.
+class Coordinate:
+        def __init__(self, row, col):
+                self.row = row
+                self.col = col
+
+class Diagnostic:
+    """Prints diagnostic display to local terminal."""
+
+    def __init__(self):
+
+        self.testIncrement = 0
+
+    def updateDiagnostic(self):
+	outputString = "ADC/B1/B2/BatL/BatS | " + "<P1: " + str(self.testIncrement) + "/" + str(self.testIncrement) + "/" + str(self.testIncrement) + "/" + str(self.testIncrement) + "/" + str(self.testIncrement) + "> | <P2: " + str(self.testIncrement) + "/" + str(self.testIncrement) + "/" + str(self.testIncrement) + "/" + str(self.testIncrement) + "/" + str(self.testIncrement) + ">"
+	sys.stdout.write(chr(27) + "[2J")
+	for i in range(len(outputString)):
+		sys.stdout.write("\b")
+	str(chr(27)+"["+str(0)+"E")
+	sys.stdout.write(outputString)
+	sys.stdout.flush()
+
+
+#Object for ball variables
+class Ball:
+        direction = 3 #0 = Not moving // 1 = Forward, 2 = Forward-Down, 3 = Forward-Up // 4 = Backward, 5 = Backward-Down, 6 = Backward-Up
+        coordinate = [Coordinate(10,4)]
+        previousCoordinate = [Coordinate(10,4)]
+	
+        def update(self, bat1, bat2):
+		#serialPort.write('\a')
+		if self.coordinate[0].col == 0 :
+			
+			control.isServe = True
+			control.p2Scores = True
+			if ((control.serve_number) % 5) == 0:
+				if control.nextToServe == "p1":
+					control.nextToServe = "p2"
+				else:
+					control.nextToServe = "p1"
+			if control.nextToServe =="p1":
+				ball.coordinate= [Coordinate(bat1+1,4)]
+			else:
+				ball.coordinate = [Coordinate(bat2+1,77)]
+		elif self.coordinate[0].col == 79:
+			
+			control.isServe = True
+			control.p1Scores = True
+			if ((control.serve_number) % 5) == 0:
+				if control.nextToServe == "p1":
+					control.nextToServe = "p2"
+				else:
+					control.nextToServe = "p1"
+			if control.nextToServe =="p1":
+				ball.coordinate= [Coordinate(bat1+1,4)]
+				ball.direction = 1
+			else:
+				ball.coordinate = [Coordinate(bat2+1,77)]
+				ball.direction = 4
+		if ball.coordinate[0].col == 4:
+			
+			if control.p1IsSupersize:
+				if ball.coordinate[0].row == bat1 or ball.coordinate[0].row == bat1+1:
+					self.direction = 3
+					control.change = True
+				elif ball.coordinate[0].row == bat1+2 :
+					self.direction = 1
+					control.change = True
+				elif ball.coordinate[0].row == bat1+3 or ball.coordinate[0].row == bat1+4:
+					self.direction = 2
+					control.change = True
+			else:
+				if ball.coordinate[0].row == bat1:
+					self.direction = 3
+					control.change = True
+				elif ball.coordinate[0].row == bat1+1:
+					self.direction = 1
+					control.change = True
+				elif ball.coordinate[0].row == bat1+2:
+					self.direction = 2
+					control.change = True
+		if ball.coordinate[0].col == 76:
+			
+			if control.p1IsSupersize:
+				if ball.coordinate[0].row == bat2 or ball.coordinate[0].row == bat2+1:
+					self.direction = 6
+					control.change = True
+				elif ball.coordinate[0].row == bat2+2 :
+					self.direction = 4
+					control.change = True
+				elif ball.coordinate[0].row == bat2+3 or ball.coordinate[0].row == bat2+4:
+					self.direction = 5
+					control.change = True
+			else:
+				if ball.coordinate[0].row == bat2:
+					self.direction = 6
+					control.change = True
+				elif ball.coordinate[0].row == bat2+1:
+					self.direction = 4
+					control.change = True
+				elif ball.coordinate[0].row == bat2+2:
+					self.direction = 5
+					control.change = True
+		if control.isServe:
+			control.change = False
+			if control.nextToServe =="p1":
+				self.previousCoordinate = self.coordinate
+				ball.coordinate= [Coordinate(bat1+1,3)]
+			else:
+				self.previousCoordinate = self.coordinate
+				ball.coordinate = [Coordinate(bat2+1,77)]
+            	elif(self.coordinate[0].row == 0 and (self.direction == 1 or self.direction == 2 or self.direction == 3)):
+                        self.direction = 2
+                elif(self.coordinate[0].row == 23 and (self.direction == 1 or self.direction == 2 or self.direction == 3)):
+                        self.direction = 3
+                elif(self.coordinate[0].col == 79 and (self.direction == 1 or self.direction == 2 or self.direction == 3)):
+                        self.direction = randint(4, 6)
+                elif(self.coordinate[0].row == 0):
+                        self.direction = 5
+                elif(self.coordinate[0].row == 23):
+                        self.direction = 6
+                elif(self.coordinate[0].col == 0 and (self.direction == 4 or self.direction == 5 or self.direction == 6)):
+                        self.direction = randint(1, 3)
+                if(self.direction == 1):
+                        self.previousCoordinate = self.coordinate
+                        self.coordinate[0].col += 1
+                elif(self.direction == 2):
+                        self.previousCoordinate = self.coordinate
+                        self.coordinate[0].col+=1
+                        self.coordinate[0].row+=1
+                elif(self.direction == 3):
+                        self.previousCoordinate = self.coordinate
+                        self.coordinate[0].col+=1
+                        self.coordinate[0].row-=1
+                elif(self.direction == 4):
+                        self.previousCoordinate = self.coordinate
+                        self.coordinate[0].col-=1
+                elif(self.direction == 5):
+                        self.previousCoordinate = self.coordinate
+                        self.coordinate[0].col-=1
+                        self.coordinate[0].row+=1
+                elif(self.direction == 6):
+                        self.previousCoordinate = self.coordinate
+                        self.coordinate[0].col-=1
+                        self.coordinate[0].row-=1
+        	
+
+#Moves cursor to coordinate.
+def moveCursor(row, col):
+        serialPort.write(str(chr(27)+"["+str(row)+";"+str(col)+"H"))
+        #time.sleep(0.1)
+
+#Fills current cursor position.
+def fillSquare(fillColour):
+        serialPort.write(str(chr(27)+"["+str(fillColour)+"m "))
+        #time.sleep(0.1)
+
+#Draws shape at given coordinates.
+def drawShape(shapeCoordinates, fillColour):
+        for coordinate in shapeCoordinates:
+                moveCursor(coordinate.row, coordinate.col)
+                fillSquare(fillColour)
+
+#Draws a score. TODO: sort out choice of number.
+def updateScore():
+	if control.p1Scores == True:
+		control.p1Score = control.p1Score + 1
+		drawScore()
+		control.p1Scores = False
+
+	if control.p2Scores == True:
+		control.p2Score = control.p2Score + 1
+		drawScore()
+		control.p2Scores = False
+
+def announceWinner():
+	if control.p1Score == 10:
+		drawShape(p1Wins, 103)		#announce winner
+		time.sleep(2)
+		#reset game
+		drawScore()
+		drawScore()
+		drawBat(9, False, 1 ,103)
+		drawBat(9, False, 2, 103)
+		drawShape(p1Serve, 40)
+	elif control.p2Score == 10:
+		drawShape(p2Wins, 103)
+		#reset game
+		drawScore(1,1)
+		drawScore(1,2)
+		drawBat(9, False, 1 ,103)
+		drawBat(9, False, 2, 103)
+		drawShape([Coordinate(10,4)], 40)
+
+#Draws a score
+def drawScore():
+	
+	
+        
+        if control.p1Scores:
+                if control.p1Score == 0:
+			drawShape(zero, 103)
+			return zero
+		if control.p1Score == 1:
+			drawShape(zero, 40)
+			drawShape(one, 103)
+			return one
+		if control.p1Score == 2:
+			drawShape(one, 40)
+			drawShape(two, 103)
+			return two
+		if control.p1Score == 3:
+			drawShape(two, 40)
+			drawShape(three, 103)
+			return three
+		if control.p1Score == 4:
+			drawShape(three, 40)
+			drawShape(four, 103)
+			return four
+		if control.p1Score == 5:
+			drawShape(four, 40)
+			drawShape(five, 103)
+			return five
+		if control.p1Score == 6:
+			drawShape(five, 40)
+			drawShape(six, 103)
+			return six
+		if control.p1Score == 7:
+			drawShape(six, 40)
+			drawShape(seven, 103)
+			return seven
+		if control.p1Score == 8:
+			drawShape(seven, 40)
+			drawShape(eight, 103)
+			return eight
+		if control.p1Score == 9:
+			drawShape(eight, 40)
+			drawShape(nine, 103)
+			return nine
+		if control.p1Score == 10:
+			announceWinner()
+			return eight
+        else:
+		shiftedNumber = []
+		if control.p2Score == 0:
+			for i in zero:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber,103)
+		if control.p2Score == 1:
+			for i in zero:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in one:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 103)
+        		return one
+
+		if control.p2Score == 2:
+			for i in one:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in two:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+        		drawShape(shiftedNumber, 103)
+			return two
+
+		if control.p2Score == 3:
+			for i in two:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in three:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+        		drawShape(shiftedNumber, 103)
+			return three
+
+		if control.p2Score == 4:
+			for i in three:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in four:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+       			drawShape(shiftedNumber, 103)
+			return four
+
+		if control.p2Score == 5:
+			for i in four:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in five:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+        		drawShape(shiftedNumber, 103)
+			return five
+
+		if control.p2Score == 6:
+			for i in five:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in six:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+        		drawShape(shiftedNumber, 103)
+			return six
+
+		if control.p2Score == 7:
+			for i in six:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in seven:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+        		drawShape(shiftedNumber, 103)
+			return seven
+
+		if control.p2Score == 8:
+			for i in seven:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in eight:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+        		drawShape(shiftedNumber, 103)
+			return eight
+
+		if control.p2Score == 9:
+			for i in eight:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+			drawShape(shiftedNumber, 40)
+			shiftedNumber = []
+			for i in nine:
+				shiftedNumber.append(Coordinate(i.row, i.col + 18))
+        		drawShape(shiftedNumber, 103)
+			return nine
+
+		if control.p2Score == 10:
+			announceWinner()
+			return eight
+
+#Draws the bats
+def drawBat(location,  player,colour, count):
+        drawCoordinates = []
+        if(player == 1):
+                if control.p1IsSupersize and count > 0:
+			for i in range(5):
+                                drawCoordinates.append(Coordinate(location+i, 3))
+                       	drawShape(drawCoordinates, colour)
+
+                else:
+			for i in range(3):
+                                drawCoordinates.append(Coordinate(location+i, 3))
+                       	drawShape(drawCoordinates, colour)
+
+        else:
+                if control.p2IsSupersize and count > 0:
+			for i in range(5):
+                                drawCoordinates.append(Coordinate(location+i, 78))
+                       	drawShape(drawCoordinates, colour)
+
+                else:
+			for i in range(3):
+                                drawCoordinates.append(Coordinate(location+i, 78))
+                       	drawShape(drawCoordinates, colour)
+def moveBat1():
+	bus.write_byte( I2CADDR, CMD_CODE )
+	tmp = bus.read_word_data( I2CADDR, 0x00 )
+	high = (tmp<<8)
+	low = (tmp>>8)
+	a =( high | low) & (0x0FFF)
+	if a < 200 and control.p1IsSupersize:
+		return 20
+	if a <100:
+		return 22
+	elif a <200:
+		return 21
+	elif a <300:
+		return 20
+	elif a <400:
+		return 19
+	elif a <500:
+		return 18
+	elif a <600:
+		return 17
+	elif a <700:
+		return 16
+	elif a <800:
+		return 15
+	elif a <900:
+		return 14
+	elif a <1000:
+		return 13
+	elif a <1100:
+		return 12
+	elif a <1200:
+		return 11
+	elif a <1300:
+		return 10
+	elif a <1400:
+		return 9
+	elif a <1500:
+		return 8
+	elif a <1600:
+		return 7
+	elif a <1700:
+		return 6
+	elif a <1800:
+		return 5
+	elif a <1900:
+		return 4
+	elif a <2000:
+		return 3
+	elif a <2100:
+		return 2
+
+	else:
+		return 1
+
+def moveBat2():
+	countA = ldr1.update()
+	
+	if countA<= 11:
+		return 1
+	elif countA < 12:
+		return 2
+	elif countA < 13:
+		return 4
+	elif countA < 14:
+		return 5
+	elif countA < 15:
+		return 7
+	elif countA < 16:
+		return 8
+	elif countA < 17:
+		return 10
+	elif countA < 18:
+		return 11
+	elif countA < 19:
+		return 13
+	elif countA < 20:
+		return 14
+	elif countA < 21:
+		return 16
+	elif countA < 22:
+		return 17
+	elif countA < 23:
+		return 19
+	elif control.p2IsSupersize:
+		return 20
+	elif countA < 24:
+		return 20
+	elif countA < 25:
+		return 21
+	
+	else:
+		return 22
+
+def clearLEDs():
+	GPIO.output(26, False)
+	GPIO.output(20, False)
+	GPIO.output(19, False)
+	GPIO.output(16, False)
+	GPIO.output(13, False)
+	GPIO.output(12, False)
+	GPIO.output(6, False)
+	GPIO.output(5, False)
+def LED_display():
+	if ball.coordinate[0].col <= 10:
+		clearLEDs()
+		GPIO.output(26, True)
+		#time.sleep(0.SC19055)
+
+	elif ball.coordinate[0].col <= 20 and ball.coordinate[0].col > 10:
+		clearLEDs()
+		GPIO.output(20, True)
+		#time.sleep(0.5)
+
+	elif ball.coordinate[0].col <= 30 and ball.coordinate[0].col > 20:
+		clearLEDs()
+		GPIO.output(19, True)
+		#time.sleep(0.5)
+
+	elif ball.coordinate[0].col <= 40 and ball.coordinate[0].col > 30:
+		clearLEDs()
+		GPIO.output(16, True)
+		#time.sleep(0.5)
+
+	elif ball.coordinate[0].col <=50 and ball.coordinate[0].col > 40:
+		clearLEDs()
+		GPIO.output(13, True)
+		#time.sleep(0.5)
+
+	elif ball.coordinate[0].col <= 60 and ball.coordinate[0].col > 50:
+		clearLEDs()
+		GPIO.output(12, True)
+		#time.sleep(0.5)
+
+	elif ball.coordinate[0].col <= 70 and ball.coordinate[0].col > 60:
+		clearLEDs()
+		GPIO.output(6, True)
+		#time.sleep(0.5)
+
+	elif ball.coordinate[0].col <= 80 and ball.coordinate[0].col > 70:
+		clearLEDs()
+		GPIO.output(5, True)
+		#time.sleep(0.5)
+
+def SuperP1(pin):
+	print("p1 b2 triggered")
+	if control.p1Supersize > 0:
+		control.p1IsSupersize = True
+def serveP1(pin):
+	print("p1 b1 triggered")
+	if control.isServe and control.nextToServe == "p1":
+		control.isServe = False
+		control.serve_number+=1
+def SuperP2(pin):
+	print("p2 b2 triggered")
+	if control.p2Supersize > 0:
+		control.p2IsSupersize = True
+def serveP2(pin):
+	print("p2 b1 triggered")
+	if control.isServe and control.nextToServe == "p2":
+		control.isServe = False
+		control.serve_number+=1
+
+def getScore():
+	net = [Coordinate(3,40),Coordinate(4,40),Coordinate(7,40),Coordinate(8,40),Coordinate(11,40),Coordinate(12,40),Coordinate(15,40),Coordinate(16,40),Coordinate(19,40),Coordinate(20,40)]
+	zero = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,30),Coordinate(4,30),Coordinate(5,30),Coordinate(6,30),Coordinate(6,31),Coordinate(3,32),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32)]
+	one = [Coordinate(2,30),Coordinate(3,30),Coordinate(4,30),Coordinate(5,30),Coordinate(6,30)]
+	two =  [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,32),Coordinate(4,32),Coordinate(4,30),Coordinate(4,31),Coordinate(5,30),Coordinate(6,30),Coordinate(6,31),Coordinate(6,32)]
+	three = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,32),Coordinate(4,32),Coordinate(4,31),Coordinate(4,30), Coordinate(5,32), Coordinate(6,32),Coordinate(6,31),Coordinate(6,30)]
+	four = [Coordinate(2,30),Coordinate(3,30),Coordinate(4,30),Coordinate(4,31),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32),Coordinate(3,32),Coordinate(2,32)]
+	five = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(2,30),Coordinate(3,30),Coordinate(4,30),Coordinate(4,31),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32),Coordinate(6,30),Coordinate(6,31)]
+	six = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(2,30),Coordinate(3,30),Coordinate(4,30),Coordinate(4,31),Coordinate(4,32),Coordinate(5,32),Coordinate(5,30),Coordinate(6,32),Coordinate(6,30),Coordinate(6,31)]
+	seven = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,32),Coordinate(4,32), Coordinate(5,32), Coordinate(6,32)]
+	eight = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,30),Coordinate(4,30),Coordinate(5,30),Coordinate(6,30),Coordinate(6,31),Coordinate(3,32),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32),Coordinate(4,31)]
+	nine = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,30),Coordinate(4,30),Coordinate(6,30),Coordinate(6,31),Coordinate(3,32),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32),Coordinate(4,31)]
+	if control.p1Score == 0:
+		return zero	
+        if control.p1Score == 1:
+            	return one
+        if control.p1Score == 2:
+            	return two
+        if control.p1Score == 3:
+            	return three
+        if control.p1Score == 4:
+            	return four
+        if control.p1Score == 5:
+            	return five
+        if control.p1Score == 6:
+            	return six
+        if control.p1Score == 7:
+            	return seven
+        if control.p1Score == 8:
+            	return eight
+        if control.p1Score == 9:
+            	return nine
+		
+
+
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+
+GPIO.setup(26, GPIO.OUT)
+GPIO.setup(20, GPIO.OUT)
+GPIO.setup(19, GPIO.OUT)
+GPIO.setup(16, GPIO.OUT)
+GPIO.setup(13, GPIO.OUT)
+GPIO.setup(12, GPIO.OUT)
+GPIO.setup(6, GPIO.OUT)
+GPIO.setup(5, GPIO.OUT)
+
+
+bus = smbus.SMBus(1)
+#GENERAL TODOS: drawBat method, more game control, refresh screen method.
+
+serialPort = Serial("/dev/ttyAMA0", 115200)
+
+if (serialPort.isOpen() == False):
+	serialPort.open()
+count = 0 #set variable to 0
+#function: count events
+
+
+I2CADDR = 0x21
+CMD_CODE = 0x10 
+GPIO.setwarnings(False) #disable runtime warnings
+GPIO.setmode(GPIO.BCM) #use Broadcom GPIO names
+#GPIO.setup(10, GPIO.OUT) #set pin 10 as output
+#set pin 9 as input, pullup
+GPIO.setup(9, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+#set rising edge event
+GPIO.add_event_detect(9, GPIO.RISING, callback=SuperP1, bouncetime=500)#
+GPIO.setup(11, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+#set rising edge event
+GPIO.add_event_detect(11, GPIO.RISING, callback=serveP1, bouncetime=500)
+GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+#set rising edge event
+GPIO.add_event_detect(18, GPIO.RISING, callback=SuperP2, bouncetime=500)
+GPIO.setup(4, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+#set rising edge event
+GPIO.add_event_detect(4, GPIO.RISING, callback=serveP2, bouncetime=500)
+
+#Arrays of coordinates of shapes to draw.
+net = [Coordinate(3,40),Coordinate(4,40),Coordinate(7,40),Coordinate(8,40),Coordinate(11,40),Coordinate(12,40),Coordinate(15,40),Coordinate(16,40),Coordinate(19,40),Coordinate(20,40)]
+zero = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,30),Coordinate(4,30),Coordinate(5,30),Coordinate(6,30),Coordinate(6,31),Coordinate(3,32),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32)]
+one = [Coordinate(2,30),Coordinate(3,30),Coordinate(4,30),Coordinate(5,30),Coordinate(6,30)]
+two =  [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,32),Coordinate(4,32),Coordinate(4,30),Coordinate(4,31),Coordinate(5,30),Coordinate(6,30),Coordinate(6,31),Coordinate(6,32)]
+three = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,32),Coordinate(4,32),Coordinate(4,31),Coordinate(4,30), Coordinate(5,32), Coordinate(6,32),Coordinate(6,31),Coordinate(6,30)]
+four = [Coordinate(2,30),Coordinate(3,30),Coordinate(4,30),Coordinate(4,31),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32),Coordinate(3,32),Coordinate(2,32)]
+five = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(2,30),Coordinate(3,30),Coordinate(4,30),Coordinate(4,31),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32),Coordinate(6,30),Coordinate(6,31)]
+six = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(2,30),Coordinate(3,30),Coordinate(4,30),Coordinate(4,31),Coordinate(4,32),Coordinate(5,32),Coordinate(5,30),Coordinate(6,32),Coordinate(6,30),Coordinate(6,31)]
+seven = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,32),Coordinate(4,32), Coordinate(5,32), Coordinate(6,32)]
+eight = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,30),Coordinate(4,30),Coordinate(5,30),Coordinate(6,30),Coordinate(6,31),Coordinate(3,32),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32),Coordinate(4,31)]
+nine = [Coordinate(2,30),Coordinate(2,31),Coordinate(2,32),Coordinate(3,30),Coordinate(4,30),Coordinate(6,30),Coordinate(6,31),Coordinate(3,32),Coordinate(4,32),Coordinate(5,32),Coordinate(6,32),Coordinate(4,31)]
+#coordinates for displaying the winner
+p1Wins = [Coordinate(2,4),Coordinate(3,5),Coordinate(4,6),Coordinate(3,7),Coordinate(4,8),Coordinate(3,9),Coordinate(2,10), Coordinate(2,12), Coordinate(3,12),Coordinate(4,12),Coordinate(2,14),Coordinate(3,14),Coordinate(4,14),Coordinate(2,15),Coordinate(2,16),Coordinate(3,16),Coordinate(4,16)]
+p2Wins = [Coordinate(2,52),Coordinate(3,53),Coordinate(4,54),Coordinate(3,55),Coordinate(4,56),Coordinate(3,57),Coordinate(2,58), Coordinate(2,60), Coordinate(3,58),Coordinate(4,58),Coordinate(2,60),Coordinate(3,60),Coordinate(4,60),Coordinate(2,61),Coordinate(2,62),Coordinate(3,62),Coordinate(4,62)]
+#Shifts screen down.
+#serialPort.write(str(chr(27)+"SC1905["+str(102)+"T"))
+#time.sleep(0.1)me 'shiftedNumber'
+
+#Ball should travel 74 columns in 3 seconds, so every 40.54ms should update =
+#time.sleep(0.04054)
+testMove = 3
+control = GameControl()
+ball = Ball()
+
+
+drawShape(net, 102)
+shifted =[]
+for i in zero:
+	shifted.append(Coordinate(i.row, i.col + 18))
+drawShape(shifted, 103)
+
+drawShape(zero,103)
+
+serialPort.write(str(chr(27)+"["+"?"+str(25)+"l"))
+bat_locationP1 = 0
+bat_locationP2 = 0
+diag = Diagnostic()
+isSuperP1 = False
+countP1 = 0
+isSuperP2 = False
+countP2 = 0
+overNet = False
+overScore = False
+preScorep1 = zero
+preScorep2 = zero
+ldr1 = ldr( 10, 17 )
+speed = 0.04
+
+while(True):
+    #serialPort.write(str(chr(27)+"["+"?"+str(41)+"l"))
+	#input_string = serialPort.read()
+    #hides cursor on the terminal
+    #time.sleep(0.1)
+	#draw the batsme 'shiftedNumber'
+	#isSuper = button1()
+
+	if control.p1IsSupersize:
+		countP1 +=1
+	if countP1 > 310:
+		drawBat(bat_locationP1,  1,40,countP1)
+		countP1 = 0
+		
+		control.p1IsSupersize = False
+		control.p1Supersize -= 1
+	if control.p2IsSupersize:
+		countP2 +=1
+	if countP2 > 310:
+		drawBat(bat_locationP2,  2,40,countP2)
+		countP2 = 0
+
+		control.p2IsSupersize = False
+		control.p2Supersize -= 1
+	#GPIO.output(10, True)
+	drawBat(bat_locationP1,  1,40,countP1)
+	bat_locationP1 = moveBat1()
+	drawBat(bat_locationP1, 1,101,countP1)
+	drawBat(bat_locationP2,  2,40,countP2)
+	bat_locationP2 = moveBat2()
+	drawBat(bat_locationP2, 2,101,countP2)
+	#draw the scores
+	#player 2 score
+	#draw the ball
+	if control.p1Scores == True:
+                updateScore()
+                preScorep1 = drawScore()	
+                control.isServe = True
+               
+	if control.p2Scores == True:
+                updateScore()
+                preScorep2 = drawScore()
+                control.isServe = True
+	
+	#draw the scores
+	#player 2 score
+	#draw the ball
+	#drawShape(ball.coordinate, 103)
+	#time.sleep(0.04054)
+	drawShape(ball.coordinate, 105)
+	for i in range(len(net)):
+		for j in range(len(ball.previousCoordinate)):
+			if(net[i].col == ball.previousCoordinate[j].col) and (net[i].row == ball.previousCoordinate[j].row):
+				overNet = True
+	#if ball.previousCoordinate[0] in preScorep1:
+		#drawShape(ball.previousCoordinate, 103)
+	#for i in preScorep1:
+		#if(i.col == ball.previousCoordinate[0].col) or (i.row == ball.previousCoordinate[0].row):
+			#overScore = True
+
+	#for i in preScorep2:
+		
+		#if(i.col == ball.previousCoordinate[0].col) or (i.row == ball.previousCoordinate[0].row):
+			#overScore = Tru
+	if control.change == True:
+		speed = random.choice(control.speeds)
+		control.change = False
+		if speed == 0.02:
+			s = "fast"
+		elif speed == 0.03:
+			s = "normal"
+		else:
+			s = "slow"
+		print("speed = "+s)
+
+	time.sleep(speed)
+	
+	if(not overNet and not overScore):
+		drawShape(ball.previousCoordinate, 40)  
+	if overNet:
+		drawShape(ball.previousCoordinate, 102)
+	
+	LED_display()
+	
+	
+	
+	#if control.isServe == False:
+	ball.update(bat_locationP1, bat_locationP2)
+	#GPIO.output(10, False)
+	overNet = False
+	overScore = False
+
+	#diag.updateDiagnostic()
